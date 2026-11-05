@@ -207,6 +207,19 @@ $('btn-deploy').onclick = async () => {
     g.start();
     window.__game = g;
   } catch (e) {
+    if (mode === 'google' && token === loadToken) {
+      // Google 3D falhou: avisa e entra no modo satélite automaticamente
+      console.warn('Google 3D falhou, usando satélite', e);
+      if (game) { try { game.stop(); } catch {} game = null; }
+      loadToken++;
+      clearInterval(watchdog);
+      $('screen-game').style.visibility = '';
+      alert((e.message || e) + '\n\nVou abrir no modo Satélite + prédios enquanto isso.');
+      $('sel-mode').value = 'osm';
+      $('btn-deploy').onclick();
+      $('sel-mode').value = 'google';
+      return;
+    }
     failLoad(e);
   }
 };

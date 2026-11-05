@@ -66,7 +66,12 @@ export class GoogleWorld {
     let ground = null;
     while (performance.now() - t0 < 40000) {
       await this.tick();
-      if (failed && !tiles.root) throw new Error('A chave do Google foi recusada ou a Map Tiles API não está ativada. (' + (failed.message || failed) + ')');
+      if (failed && !tiles.root) {
+        const m = String(failed.message || failed);
+        throw new Error(/404|403|not found|denied/i.test(m)
+          ? 'O Google recusou a chave (faturamento do Google Cloud ainda não ativo ou Map Tiles API desligada).'
+          : 'Falha ao conectar no Google 3D: ' + m);
+      }
       const f = Math.min(1, (performance.now() - t0) / 15000);
       progress(0.05 + f * 0.45, 'Baixando a cidade em 3D...');
       ground = this.castDown(0, 0, 3000);
@@ -100,12 +105,20 @@ export class GoogleWorld {
   }
 
   tick() {
-    return new Promise((res) => requestAnimationFrame(() => {
-      this.camera.updateMatrixWorld();
-      this.tiles.update();
-      this.renderer.render(this.scene, this.camera);
-      res();
-    }));
+    // rAF não roda com a aba em segundo plano; o setTimeout garante que o carregamento continue
+    return new Promise((res) => {
+      let done = false;
+      const step = () => {
+        if (done) return;
+        done = true;
+        this.camera.updateMatrixWorld();
+        this.tiles.update();
+        this.renderer.render(this.scene, this.camera);
+        res();
+      };
+      requestAnimationFrame(step);
+      setTimeout(step, 100);
+    });
   }
 
   castDown(x, z, fromY) {
