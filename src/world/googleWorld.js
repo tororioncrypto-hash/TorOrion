@@ -82,7 +82,7 @@ export class GoogleWorld {
     while (performance.now() - t1 < 9000) {
       await this.tick();
       progress(0.5 + ((performance.now() - t1) / 9000) * 0.4, 'Carregando detalhes das ruas...');
-      if (tiles.stats && tiles.stats.downloading === 0 && tiles.stats.parsing === 0 && performance.now() - t1 > 2500) break;
+      if (tiles.stats && tiles.stats.queued === 0 && tiles.stats.downloading === 0 && tiles.stats.parsing === 0 && performance.now() - t1 > 2500) break;
     }
     ground = this.castDown(0, 0, ground + 200) ?? ground;
     this.spawn = new THREE.Vector3(0, ground, 0);

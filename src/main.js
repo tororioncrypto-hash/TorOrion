@@ -102,6 +102,48 @@ $('btn-settings-close').onclick = () => {
 };
 
 // ---------- JOGO ----------
+// Cria o renderizador 3D tentando configurações cada vez mais leves (placas de vídeo antigas/Edge)
+function webglInfo() {
+  const info = { webgl2: false, webgl1: false, gpu: '?' };
+  try { info.webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch {}
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (gl) {
+      info.webgl1 = true;
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      info.gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    }
+  } catch {}
+  return info;
+}
+function createRenderer() {
+  const attempts = [
+    { antialias: settings.quality !== 'low', powerPreference: 'high-performance' },
+    { antialias: false, powerPreference: 'default' },
+    { antialias: false, powerPreference: 'low-power', failIfMajorPerformanceCaveat: false, precision: 'mediump' },
+  ];
+  let lastErr;
+  for (const opt of attempts) {
+    const old = $('game-canvas');
+    const c = document.createElement('canvas');
+    c.id = 'game-canvas';
+    old.replaceWith(c);
+    try {
+      const r = new THREE.WebGLRenderer({ canvas: c, ...opt });
+      c.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+        if (game) alert('O 3D do navegador travou (a placa de vídeo reiniciou). Recarregue a página para continuar.');
+      });
+      return r;
+    } catch (e) { lastErr = e; console.warn('WebGL falhou com', opt, e); }
+  }
+  const i = webglInfo();
+  const why = !i.webgl1 && !i.webgl2
+    ? 'O navegador está com o 3D (WebGL) bloqueado.'
+    : !i.webgl2 ? `Sua placa de vídeo (${i.gpu}) só tem WebGL 1, e o jogo precisa de WebGL 2.` : 'O 3D (WebGL 2) não iniciou.';
+  throw new Error(`${why}\n\nComo resolver:\n1) Reinicie o notebook (o Edge fica aberto em segundo plano e só reativa o 3D depois de reiniciar).\n2) Se continuar, teste no Google Chrome.\n\nDetalhes: WebGL2=${i.webgl2 ? 'sim' : 'não'} · WebGL1=${i.webgl1 ? 'sim' : 'não'} · GPU=${i.gpu} · ${lastErr && lastErr.message}`);
+}
+
 let loadToken = 0;
 $('btn-deploy').onclick = async () => {
   if (!chosen) return;
@@ -143,11 +185,7 @@ $('btn-deploy').onclick = async () => {
   };
   try {
     if (!renderer) {
-      try {
-        renderer = new THREE.WebGLRenderer({ canvas: $('game-canvas'), antialias: settings.quality !== 'low', powerPreference: 'high-performance' });
-      } catch (e) {
-        throw new Error('Seu navegador não conseguiu ativar o 3D (WebGL). Ative a "aceleração de hardware" nas configurações do navegador e recarregue a página.');
-      }
+      renderer = createRenderer();
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.0;
