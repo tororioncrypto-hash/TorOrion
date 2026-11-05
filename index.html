@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="description" content="WAR Thor Orion: FPS online no mundo real. Escolha onde nascer e lute nas ruas reais." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>WAR Thor Orion</title>
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="screen-login" class="screen active">
+    <div class="brand">
+      <div class="logo-bolt">⚡</div>
+      <h1>WAR <span>THOR ORION</span></h1>
+      <p class="tag">Lute nas ruas reais do planeta.</p>
+    </div>
+    <div class="card auth-card">
+      <button id="btn-google" class="btn btn-google"><span class="g">G</span> Entrar com Google</button>
+      <div class="sep"><span>ou</span></div>
+      <form id="form-email" autocomplete="on">
+        <input id="in-email" type="email" placeholder="Email" autocomplete="email" required />
+        <input id="in-pass" type="password" placeholder="Senha (mín. 6)" autocomplete="current-password" minlength="6" required />
+        <input id="in-name" type="text" placeholder="Nome de guerra (para conta nova)" maxlength="18" />
+        <div class="row">
+          <button type="submit" class="btn btn-primary" data-mode="login">Entrar</button>
+          <button type="submit" class="btn btn-ghost" data-mode="signup">Criar conta</button>
+        </div>
+      </form>
+      <button id="btn-guest" class="btn btn-link">Jogar como convidado</button>
+      <p id="auth-msg" class="msg"></p>
+      <p id="auth-mode" class="hint"></p>
+    </div>
+  </section>
+
+  <!-- ESCOLHA DO LOCAL -->
+  <section id="screen-map" class="screen">
+    <div id="picker-map"></div>
+    <div class="map-top">
+      <div class="player-chip"><span id="chip-rank">★</span> <b id="chip-name">Soldado</b> <small id="chip-level">Nv 1</small></div>
+      <form id="form-search" class="search">
+        <input id="in-search" type="text" placeholder="Buscar endereço, cidade ou lugar..." />
+        <button class="btn btn-primary" type="submit">Buscar</button>
+      </form>
+      <button id="btn-settings" class="btn btn-icon" title="Configurações">⚙</button>
+      <button id="btn-logout" class="btn btn-icon" title="Sair">⏻</button>
+    </div>
+    <div class="map-bottom card">
+      <div>
+        <div class="label">Local de nascimento</div>
+        <div id="spawn-label" class="spawn-label">Toque no mapa para escolher onde nascer</div>
+      </div>
+      <div class="map-actions">
+        <select id="sel-mode" title="Modo de cenário">
+          <option value="osm">Cenário: Satélite + prédios (grátis)</option>
+          <option value="google">Cenário: Google 3D fotorrealista</option>
+        </select>
+        <button id="btn-gps" class="btn btn-ghost">📍 Minha localização</button>
+        <button id="btn-deploy" class="btn btn-primary btn-big" disabled>NASCER AQUI</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONFIGURAÇÕES -->
+  <div id="modal-settings" class="modal">
+    <div class="card">
+      <h2>Configurações</h2>
+      <label>Chave da API Google Maps (para o modo 3D fotorrealista)
+        <input id="in-gkey" type="text" placeholder="AIza..." />
+      </label>
+      <p class="hint">Sem chave o jogo usa imagem de satélite + prédios do OpenStreetMap. A chave fica salva só neste aparelho.</p>
+      <label>Sensibilidade da mira <input id="in-sens" type="range" min="0.3" max="3" step="0.1" value="1" /></label>
+      <label>Qualidade gráfica
+        <select id="sel-quality"><option value="low">Baixa (celular fraco)</option><option value="med" selected>Média</option><option value="high">Alta</option></select>
+      </label>
+      <div class="row"><button id="btn-settings-close" class="btn btn-primary">Salvar</button></div>
+    </div>
+  </div>
+
+  <!-- CARREGANDO -->
+  <section id="screen-loading" class="screen">
+    <div class="loading-box">
+      <div class="logo-bolt spin">⚡</div>
+      <h2 id="load-title">Preparando zona de combate...</h2>
+      <div class="bar"><div id="load-bar"></div></div>
+      <p id="load-msg" class="hint"></p>
+    </div>
+  </section>
+
+  <!-- JOGO -->
+  <section id="screen-game" class="screen">
+    <canvas id="game-canvas"></canvas>
+    <div id="hud">
+      <div id="scope-overlay"></div>
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="reticle"></div>
+      <div id="hitmarker"></div>
+      <div id="xp-pop"></div>
+      <div id="damage-vignette"></div>
+      <div id="killfeed"></div>
+      <div id="mission"></div>
+      <div id="compass"><div id="compass-strip"></div></div>
+      <canvas id="minimap" width="180" height="180"></canvas>
+      <div id="player-panel">
+        <div class="rank-badge"><span id="hud-rank-icon">★</span><b id="hud-level">1</b></div>
+        <div class="pp-right">
+          <div id="hud-name">Soldado</div>
+          <div class="xpbar"><div id="hud-xpbar"></div></div>
+          <div class="hpbar"><div id="hud-hp"></div></div>
+        </div>
+      </div>
+      <div id="weapon-panel">
+        <div id="hud-weapon">TO-R7</div>
+        <div><b id="hud-ammo">30</b><span id="hud-reserve">/ 120</span></div>
+        <div id="hud-items">💉 <b id="hud-med">2</b> &nbsp; 💣 <b id="hud-gren">2</b></div>
+      </div>
+      <div id="center-msg"></div>
+      <div id="attrib"></div>
+      <!-- toque -->
+      <div id="touch-ui">
+        <div id="joy"><div id="joy-knob"></div></div>
+        <button class="tbtn" id="t-fire">🔥</button>
+        <button class="tbtn" id="t-ads">◎</button>
+        <button class="tbtn small" id="t-jump">⤒</button>
+        <button class="tbtn small" id="t-reload">R</button>
+        <button class="tbtn small" id="t-swap">⇄</button>
+        <button class="tbtn small" id="t-med">💉</button>
+        <button class="tbtn small" id="t-gren">💣</button>
+        <button class="tbtn small" id="t-crouch">⤓</button>
+      </div>
+      <button id="btn-pause" class="btn btn-icon">❚❚</button>
+    </div>
+    <div id="pause-menu" class="modal">
+      <div class="card">
+        <h2>Pausado</h2>
+        <p class="hint" id="pause-stats"></p>
+        <div class="col">
+          <button id="btn-resume" class="btn btn-primary">Continuar</button>
+          <button id="btn-exit" class="btn btn-ghost">Voltar ao mapa</button>
+        </div>
+        <p class="hint keys">WASD mover · Mouse mirar · Clique atirar · Botão direito mirar (ADS) · Shift correr · Espaço pular · C agachar · R recarregar · 1/2/3 armas · Q kit médico · G granada · Esc pausa</p>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
