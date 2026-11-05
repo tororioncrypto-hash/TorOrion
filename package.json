@@ -9,9 +9,11 @@
   },
   "license": "UNLICENSED",
   "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "3d-tiles-renderer": "^0.5.4",
     "firebase": "^13.2.0",
     "leaflet": "^1.9.4",
+    "pbf": "^5.1.2",
     "three": "^0.187.0",
     "three-mesh-bvh": "^0.9.18"
   },

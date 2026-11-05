@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+import { VectorTile } from '@mapbox/vector-tile';
+import { PbfReader as Pbf } from 'pbf';
 import { OVERPASS_URLS, IMAGERY_ATTRIB } from '../config.js';
 import { buildImageryCanvas, imageryPlane, makeProjection, pointInPoly, closestOnSeg, seededRandom, addSkyAndLights } from './common.js';
 
@@ -72,19 +74,56 @@ function parseHeight(tags, rnd) {
   return 5 + rnd() * 6;
 }
 
-async function overpass(query) {
-  let last;
-  for (const url of OVERPASS_URLS) {
-    try {
-      const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 30000);
-      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: ctrl.signal });
-      clearTimeout(to);
-      if (r.ok) return await r.json();
-      last = new Error('Overpass ' + r.status);
-    } catch (e) { last = e; }
+// Overpass: tenta todos os servidores ao mesmo tempo e usa o primeiro que responder
+async function overpass(query, timeoutMs = 30000) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await Promise.any(OVERPASS_URLS.map(async (url) => {
+      const r = await fetch(url + '?data=' + encodeURIComponent(query), { signal: ctrl.signal });
+      if (!r.ok) throw new Error('Overpass ' + r.status);
+      return r.json();
+    }));
+  } finally { clearTimeout(to); ctrl.abort(); }
+}
+
+// Prédios do OpenStreetMap via tiles vetoriais do OpenFreeMap (rápido, CDN, sem chave)
+let ofmTemplate = null;
+async function openFreeMapBuildings(lat, lon, R) {
+  if (!ofmTemplate) {
+    const tj = await (await fetch('https://tiles.openfreemap.org/planet')).json();
+    ofmTemplate = tj.tiles[0];
   }
-  throw last;
+  const z = 14, n = 2 ** z;
+  const dLat = R / 111320, dLon = R / (111320 * Math.cos((lat * Math.PI) / 180));
+  const tx = (lo) => Math.floor(((lo + 180) / 360) * n);
+  const ty = (la) => { const r = (la * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n); };
+  const x0 = tx(lon - dLon), x1 = tx(lon + dLon), y0 = ty(lat + dLat), y1 = ty(lat - dLat);
+  const jobs = [];
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) jobs.push({ x, y });
+  const els = [];
+  await Promise.all(jobs.map(async ({ x, y }) => {
+    const r = await fetch(ofmTemplate.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+    if (!r.ok) throw new Error('OFM ' + r.status);
+    const vt = new VectorTile(new Pbf(new Uint8Array(await r.arrayBuffer())));
+    const layer = vt.layers.building;
+    if (!layer) return;
+    for (let i = 0; i < layer.length; i++) {
+      const f = layer.feature(i);
+      const gj = f.toGeoJSON(x, y, z);
+      const p = f.properties;
+      const tags = { building: 'yes', height: p.render_height, min_height: p.render_min_height, colour: p.colour };
+      const polys = gj.geometry.type === 'Polygon' ? [gj.geometry.coordinates] : gj.geometry.type === 'MultiPolygon' ? gj.geometry.coordinates : [];
+      for (const poly of polys) {
+        const ring = poly[0];
+        if (!ring || ring.length < 4) continue;
+        const c = ring[0];
+        if (Math.abs(c[1] - lat) > dLat * 1.1 || Math.abs(c[0] - lon) > dLon * 1.1) continue;
+        els.push({ type: 'way', tags, geometry: ring.map(([lo, la]) => ({ lat: la, lon: lo })) });
+      }
+    }
+  }));
+  return { elements: els };
 }
 
 export class OsmWorld {
@@ -149,9 +188,15 @@ export class OsmWorld {
     // 2) prédios e árvores do OpenStreetMap
     progress(0.45, 'Carregando prédios reais da região...');
     const R = Math.round(near.sizeM * 0.62);
-    const q = `[out:json][timeout:25];(way["building"](around:${R},${lat},${lon});relation["building"]["type"="multipolygon"](around:${R},${lat},${lon});node["natural"="tree"](around:${R},${lat},${lon}););out geom qt;`;
     let data = { elements: [] };
-    try { data = await overpass(q); } catch (e) { console.warn('Overpass falhou', e); this.overpassFailed = true; }
+    try {
+      data = await openFreeMapBuildings(lat, lon, R);
+    } catch (e) {
+      console.warn('OpenFreeMap falhou, tentando Overpass', e);
+      progress(0.5, 'Carregando prédios (servidor alternativo)...');
+      const q = `[out:json][timeout:25];(way["building"](around:${R},${lat},${lon});relation["building"]["type"="multipolygon"](around:${R},${lat},${lon}););out geom qt;`;
+      try { data = await overpass(q, 35000); } catch (e2) { console.warn('Overpass falhou', e2); this.buildingsFailed = true; }
+    }
     progress(0.75, 'Construindo a cidade...');
 
     const rnd = seededRandom(Math.floor(Math.abs(lat * 1e5 + lon * 1e5)));
@@ -170,6 +215,7 @@ export class OsmWorld {
       if (minH > 0) return; // partes suspensas: ignoradas no protótipo
       this.addPoly(pts, h, 'building');
       col.setHex(palette[Math.floor(rnd() * palette.length)]);
+      if (tags.colour && /^#[0-9a-f]{6}$/i.test(tags.colour)) col.lerp(new THREE.Color(tags.colour), 0.5);
       // paredes
       let u = 0;
       for (let i = 0; i < pts.length; i++) {
@@ -229,8 +275,16 @@ export class OsmWorld {
       this.group.add(m); this.solid.push(m);
     }
 
-    // 3) árvores
+    // 3) árvores (chegam depois, sem travar o carregamento)
     this.buildTrees(trees, rnd);
+    if (!trees.length) {
+      overpass(`[out:json][timeout:20];node["natural"="tree"](around:${R},${lat},${lon});out qt;`, 40000)
+        .then((d) => {
+          const t = (d.elements || []).map((e) => proj.toLocal(e.lat, e.lon));
+          if (t.length) this.buildTrees(t, seededRandom(7));
+        })
+        .catch(() => {});
+    }
     // 4) cobertura: contêineres e barreiras perto do ponto de nascimento
     this.buildCover(rnd);
     progress(0.95, 'Posicionando tropas...');

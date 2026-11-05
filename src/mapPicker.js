@@ -27,13 +27,19 @@ export class MapPicker {
       } catch {}
     }
   }
-  flyTo(lat, lon, zoom = 18) { this.map.flyTo([lat, lon], zoom, { duration: 1.5 }); }
+  flyTo(lat, lon, zoom = 18) {
+    const sz = this.map.getSize();
+    try {
+      if (sz.x > 0 && sz.y > 0) this.map.flyTo([lat, lon], zoom, { duration: 1.5 });
+      else this.map.setView([lat, lon], zoom, { animate: false });
+    } catch { this.map.setView([lat, lon], zoom, { animate: false }); }
+  }
   async search(q) {
     const r = await fetch(`${NOMINATIM_URL}/search?format=jsonv2&limit=1&accept-language=pt-BR&q=${encodeURIComponent(q)}`);
     const j = await r.json();
     if (!j.length) throw new Error('Lugar não encontrado');
     const { lat, lon, display_name } = j[0];
-    this.flyTo(+lat, +lon, 18);
     this.pick(+lat, +lon, display_name);
+    this.flyTo(+lat, +lon, 18);
   }
 }

@@ -40,7 +40,9 @@ export const IMAGERY_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services
 export const IMAGERY_ATTRIB = 'Imagens © Esri, Maxar, Earthstar Geographics · Prédios © colaboradores do OpenStreetMap';
 export const OVERPASS_URLS = [
   'https://overpass-api.de/api/interpreter',
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://z.overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
 ];
 export const NOMINATIM_URL = 'https://nominatim.openstreetmap.org';
