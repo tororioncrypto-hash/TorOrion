@@ -25,7 +25,9 @@ export function makeProjection(lat0, lon0) {
 
 async function loadTile(z, x, y) {
   const url = IMAGERY_URL.replace('{z}', z).replace('{x}', x).replace('{y}', y);
-  const r = await fetch(url, { mode: 'cors' });
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 15000);
+  const r = await fetch(url, { mode: 'cors', signal: ctrl.signal }).finally(() => clearTimeout(to));
   if (!r.ok) throw new Error('tile ' + r.status);
   return createImageBitmap(await r.blob());
 }

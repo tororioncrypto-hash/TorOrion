@@ -87,11 +87,17 @@ async function overpass(query, timeoutMs = 30000) {
   } finally { clearTimeout(to); ctrl.abort(); }
 }
 
+function fetchT(url, ms) {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(to));
+}
+
 // Prédios do OpenStreetMap via tiles vetoriais do OpenFreeMap (rápido, CDN, sem chave)
 let ofmTemplate = null;
 async function openFreeMapBuildings(lat, lon, R) {
   if (!ofmTemplate) {
-    const tj = await (await fetch('https://tiles.openfreemap.org/planet')).json();
+    const tj = await (await fetchT('https://tiles.openfreemap.org/planet', 12000)).json();
     ofmTemplate = tj.tiles[0];
   }
   const z = 14, n = 2 ** z;
@@ -103,7 +109,7 @@ async function openFreeMapBuildings(lat, lon, R) {
   for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) jobs.push({ x, y });
   const els = [];
   await Promise.all(jobs.map(async ({ x, y }) => {
-    const r = await fetch(ofmTemplate.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+    const r = await fetchT(ofmTemplate.replace('{z}', z).replace('{x}', x).replace('{y}', y), 20000);
     if (!r.ok) throw new Error('OFM ' + r.status);
     const vt = new VectorTile(new Pbf(new Uint8Array(await r.arrayBuffer())));
     const layer = vt.layers.building;

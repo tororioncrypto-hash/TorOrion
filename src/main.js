@@ -5,6 +5,7 @@ import { Profile } from './profile.js';
 import { MapPicker } from './mapPicker.js';
 import { loadSettings, saveSettings, getGoogleKey, firebaseEnabled } from './config.js';
 import { initAudio } from './audio.js';
+import { Game } from './game.js';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -101,6 +102,7 @@ $('btn-settings-close').onclick = () => {
 };
 
 // ---------- JOGO ----------
+let loadToken = 0;
 $('btn-deploy').onclick = async () => {
   if (!chosen) return;
   initAudio();
@@ -112,38 +114,73 @@ $('btn-deploy').onclick = async () => {
   }
   profile.data.spawn = chosen; profile.save();
   show('screen-loading');
-  const progress = (f, msg) => { $('load-bar').style.width = `${Math.round(f * 100)}%`; if (msg) $('load-msg').textContent = msg; };
+  const token = ++loadToken;
+  let lastChange = performance.now();
+  const progress = (f, msg) => {
+    if (token !== loadToken) return;
+    lastChange = performance.now();
+    $('load-bar').style.width = `${Math.round(f * 100)}%`;
+    if (msg) $('load-msg').textContent = msg;
+  };
   progress(0, 'Iniciando...');
-  if (!renderer) {
-    renderer = new THREE.WebGLRenderer({ canvas: $('game-canvas'), antialias: settings.quality !== 'low', powerPreference: 'high-performance', logarithmicDepthBuffer: false });
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
-  }
-  renderer.shadowMap.enabled = settings.quality !== 'low';
-  renderer.setSize(innerWidth, innerHeight, false);
-  const { Game } = await import('./game.js');
-  game = new Game({ renderer, canvas: $('game-canvas'), profile, settings, mode, lat: chosen.lat, lon: chosen.lon, label: chosen.label, googleKey: key, onExit: exitGame });
+  // vigia: se nada mudar por 60s, avisa e volta ao mapa
+  const watchdog = setInterval(() => {
+    if (token !== loadToken) return clearInterval(watchdog);
+    if (performance.now() - lastChange > 60000) {
+      clearInterval(watchdog);
+      failLoad(new Error('A conexão com os servidores de mapa demorou demais. Tente de novo ou escolha outro local.'));
+    }
+  }, 2000);
+  const failLoad = (e) => {
+    if (token !== loadToken) return;
+    loadToken++;
+    clearInterval(watchdog);
+    console.error(e);
+    $('screen-game').style.visibility = '';
+    if (game) { try { game.stop(); } catch {} game = null; }
+    show('screen-map');
+    alert('Não foi possível carregar o cenário: ' + (e.message || e));
+  };
   try {
+    if (!renderer) {
+      try {
+        renderer = new THREE.WebGLRenderer({ canvas: $('game-canvas'), antialias: settings.quality !== 'low', powerPreference: 'high-performance' });
+      } catch (e) {
+        throw new Error('Seu navegador não conseguiu ativar o 3D (WebGL). Ative a "aceleração de hardware" nas configurações do navegador e recarregue a página.');
+      }
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
+    }
+    renderer.shadowMap.enabled = settings.quality !== 'low';
+    renderer.setSize(innerWidth, innerHeight, false);
+    progress(0.01, 'Preparando o motor 3D...');
+    const g = new Game({ renderer, canvas: $('game-canvas'), profile, settings, mode, lat: chosen.lat, lon: chosen.lon, label: chosen.label, googleKey: key, onExit: exitGame });
+    game = g;
     // o canvas precisa estar visível para o modo Google calcular a resolução
     $('screen-game').classList.add('active');
     $('screen-game').style.visibility = 'hidden';
-    await game.init(progress);
+    await g.init(progress);
+    if (token !== loadToken) { try { g.stop(); } catch {} return; }
+    clearInterval(watchdog);
     $('screen-game').style.visibility = '';
     show('screen-game');
-    game.start();
-    window.__game = game;
+    g.start();
+    window.__game = g;
   } catch (e) {
-    console.error(e);
-    $('screen-game').style.visibility = '';
-    try { game.stop(); } catch {}
-    game = null;
-    show('screen-map');
-    alert('Não foi possível carregar o cenário: ' + (e.message || e));
+    failLoad(e);
   }
 };
+$('btn-cancel-load').onclick = () => {
+  loadToken++;
+  if (game) { try { game.stop(); } catch {} game = null; }
+  $('screen-game').style.visibility = '';
+  show('screen-map');
+};
+
+// se um arquivo novo do jogo não carregar (versão antiga aberta), recarrega a página
+addEventListener('vite:preloadError', () => location.reload());
 
 function exitGame() {
   if (game) { game.stop(); game = null; }
