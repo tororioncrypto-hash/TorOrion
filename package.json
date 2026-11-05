@@ -13,7 +13,9 @@
     "3d-tiles-renderer": "^0.5.4",
     "firebase": "^13.2.0",
     "leaflet": "^1.9.4",
+    "n8ao": "^2.0.1",
     "pbf": "^5.1.2",
+    "postprocessing": "^6.39.6",
     "three": "^0.187.0",
     "three-mesh-bvh": "^0.9.18"
   },

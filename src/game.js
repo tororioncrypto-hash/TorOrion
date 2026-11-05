@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { WEAPONS, buildWeaponModel, buildSoldier } from './weapons.js';
+import { WEAPONS, buildWeaponModel } from './weapons.js';
+import { loadSoldierModel, makeSoldier, blendSoldier } from './soldier.js';
+import { createPipeline } from './render.js';
 import { sfx, initAudio } from './audio.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { OsmWorld } from './world/osmWorld.js';
@@ -61,8 +63,11 @@ export class Game {
       this.world = new OsmWorld(this.scene, this.renderer, q);
       await this.world.load(this.lat, this.lon, progress);
     }
+    progress(0.96, 'Equipando soldados...');
+    await loadSoldierModel();
     this.setupPlayer();
     this.setupWeapons();
+    this.pipeline = createPipeline(this.renderer, this.scene, this.camera, this.weaponScene, this.weaponCam, q);
     this.setupEffects();
     this.mission = { i: 0, count: 0 };
     this.streak = 0;
@@ -160,17 +165,19 @@ export class Game {
     const p = this.player.pos;
     const pos = this.world.randomPoint(p, initial ? 35 : 45, initial ? 110 : 120);
     if (this.world.kind === 'osm') pos.y = this.world.groundY(pos.x, pos.z, 0);
-    const g = buildSoldier(Math.floor(Math.random() * 3));
+    const sold = makeSoldier(Math.floor(Math.random() * 3));
+    const g = sold.root;
     g.position.copy(pos);
     this.scene.add(g);
     const bot = {
+      sold, hit: sold.hitboxes,
       group: g, pos: g.position, hp: 100, dead: false, deadT: 0, yaw: Math.random() * 6.28,
       name: ENEMY_NAMES[Math.floor(Math.random() * ENEMY_NAMES.length)],
       target: null, state: 'patrol', seeT: 0, losT: Math.random() * 0.4, hasLos: false,
       burst: 0, nextShot: 0, pause: 1 + Math.random(), walk: 0, stuckT: 0, lastPos: pos.clone(), strafe: Math.random() < 0.5 ? 1 : -1, strafeT: 0,
       accuracy: 0.85 + Math.random() * 0.3,
     };
-    g.traverse((o) => { if (o.isMesh) o.userData.bot = bot; });
+    sold.hitboxes.forEach((h) => { h.userData.bot = bot; });
     this.bots.push(bot);
   }
 
@@ -193,6 +200,7 @@ export class Game {
         const k = Math.min(1, b.deadT / 0.45);
         b.group.rotation.x = -k * Math.PI / 2 * 0.95;
         b.group.position.y = b.baseY - k * 0.1;
+        if (b.deadT < 0.5) b.sold.mixer.update(dt * 0.3);
         if (b.deadT > 5) { this.scene.remove(b.group); b.remove = true; }
         continue;
       }
@@ -252,9 +260,7 @@ export class Game {
         b.lastPos.copy(b.pos); b.stuckT = 0;
       }
       b.group.rotation.y = b.yaw;
-      const sw = Math.sin(b.walk) * 0.5 * Math.min(1, speed);
-      b.group.userData.legL.rotation.x = sw;
-      b.group.userData.legR.rotation.x = -sw;
+      blendSoldier(b.sold, move.lengthSq() > 0.000001 ? speed : 0, dt);
     }
     const before = this.bots.length;
     this.bots = this.bots.filter((b) => !b.remove);
@@ -340,8 +346,8 @@ export class Game {
     this.raycaster.set(origin, dir);
     this.raycaster.far = D.range;
     this.raycaster.firstHitOnly = false;
-    const live = this.bots.filter((b) => !b.dead).map((b) => b.group);
-    const bh = this.raycaster.intersectObjects(live, true)[0];
+    const live = this.bots.filter((b) => !b.dead).flatMap((b) => b.hit);
+    const bh = this.raycaster.intersectObjects(live, false)[0];
     const wh = this.world.raycast(this.raycaster);
     const muzzle = this.camera.localToWorld(new THREE.Vector3(THREE.MathUtils.lerp(0.13, 0, adsK), THREE.MathUtils.lerp(-0.11, -0.05, adsK), -0.9));
     this.muzzleLight.position.copy(muzzle);
@@ -603,8 +609,8 @@ export class Game {
     this.kick = THREE.MathUtils.damp(this.kick, 0, 18, dt);
     this.swayX = THREE.MathUtils.damp(this.swayX, 0, 8, dt);
     this.swayY = THREE.MathUtils.damp(this.swayY, 0, 8, dt);
-    const hip = new THREE.Vector3(0.16, -0.17, -0.38);
-    const adsZ = D.optic === 'dot' ? -0.28 : D.optic === 'sniper' ? -0.2 : -0.24;
+    const hip = new THREE.Vector3(0.13, -0.155, -0.33);
+    const adsZ = M.adsZ ?? -0.24;
     const adsP = new THREE.Vector3(0, -M.sightY, adsZ);
     const p = hip.lerp(adsP, a);
     const bobK = (1 - a * 0.85) * Math.min(1, hv / 4);
@@ -627,7 +633,8 @@ export class Game {
     $('scope-overlay').classList.toggle('on', scoped);
     const ch = $('crosshair');
     ch.style.opacity = a > 0.6 ? 0 : 1;
-    $('reticle').style.opacity = D.optic === 'scope' && a > 0.85 ? 1 : 0;
+    $('reticle').style.opacity = 0;
+    if (M.reticle) M.reticle.visible = a > 0.55;
     const moving = Math.hypot(this.player.vel.x, this.player.vel.z) > 1;
     ch.style.setProperty('--spread', `${4 + D.hip * (moving ? 4 : 2.5) + this.kick * 8}px`);
   }
@@ -904,6 +911,7 @@ export class Game {
     const pr = q === 'low' ? Math.min(devicePixelRatio, 1) * 0.8 : q === 'high' ? Math.min(devicePixelRatio, 2) : Math.min(devicePixelRatio, 1.35);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(innerWidth, innerHeight, false);
+    if (this.pipeline) this.pipeline.setSize(innerWidth, innerHeight);
     this.camera.aspect = this.weaponCam.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
     this.weaponCam.updateProjectionMatrix();
@@ -925,12 +933,7 @@ export class Game {
       const active = !this.paused && (this.touch || document.pointerLockElement === this.canvas);
       if (active) this.update(dt);
       else { this.world.update(this.camera); this.updateHUD(); }
-      const r = this.renderer;
-      r.autoClear = false;
-      r.clear();
-      r.render(this.scene, this.camera);
-      r.clearDepth();
-      r.render(this.weaponScene, this.weaponCam);
+      this.pipeline.render(dt);
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -945,6 +948,7 @@ export class Game {
     $('center-msg').innerHTML = '';
     $('damage-vignette').style.opacity = 0;
     if (this.world && this.world.tiles) this.world.tiles.dispose();
+    if (this.pipeline) this.pipeline.dispose();
     this.scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
       if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.map && m.map.dispose(); m.dispose(); });

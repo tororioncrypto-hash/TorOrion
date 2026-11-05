@@ -73,6 +73,26 @@ export async function buildImageryCanvas(lat, lon, z, n, onTile) {
   };
 }
 
+// textura de relevo fina (asfalto/cascalho), repetida no chão para dar detalhe de perto
+let _ground = null;
+function groundDetail() {
+  if (_ground) return _ground;
+  const n = 256, c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d');
+  const im = g.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) { const v = 128 + (Math.random() - 0.5) * 90; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  for (let i = 0; i < 900; i++) {
+    const v = Math.random() < 0.5 ? 40 : 220;
+    g.fillStyle = `rgba(${v},${v},${v},0.5)`;
+    g.beginPath(); g.arc(Math.random() * n, Math.random() * n, 0.8 + Math.random() * 2.2, 0, 7); g.fill();
+  }
+  _ground = new THREE.CanvasTexture(c);
+  _ground.wrapS = _ground.wrapT = THREE.RepeatWrapping;
+  return _ground;
+}
+
 export function imageryPlane(img, renderer, y = 0, order = 0) {
   const tex = new THREE.CanvasTexture(img.canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -81,7 +101,11 @@ export function imageryPlane(img, renderer, y = 0, order = 0) {
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   const geo = new THREE.PlaneGeometry(img.sizeM, img.sizeM);
   geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: order, polygonOffsetUnits: order });
+  const bump = groundDetail();
+  const det = bump.clone();
+  det.repeat.set(img.sizeM / 3, img.sizeM / 3);
+  det.needsUpdate = true;
+  const mat = new THREE.MeshStandardMaterial({ map: tex, bumpMap: det, bumpScale: 1.2, roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: order, polygonOffsetUnits: order });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(img.centerX, y, img.centerZ);
   mesh.receiveShadow = true;
@@ -92,17 +116,30 @@ export function addSkyAndLights(scene, renderer, quality) {
   const sky = new Sky();
   sky.scale.setScalar(45000);
   const u = sky.material.uniforms;
-  u.turbidity.value = 8;
+  u.turbidity.value = 5;
   u.rayleigh.value = 1.6;
-  u.mieCoefficient.value = 0.006;
+  u.mieCoefficient.value = 0.0035;
   u.mieDirectionalG.value = 0.85;
   const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(58), THREE.MathUtils.degToRad(140));
   u.sunPosition.value.copy(sun);
   scene.add(sky);
+  // reflexos e luz ambiente vindos do próprio céu (PBR)
+  try {
+    const envScene = new THREE.Scene();
+    const envSky = new Sky();
+    envSky.scale.setScalar(50);
+    for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) envSky.material.uniforms[k].value = u[k].value;
+    envSky.material.uniforms.sunPosition.value.copy(sun);
+    envScene.add(envSky);
+    const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromScene(envScene, 0, 0.1, 100).texture;
+    scene.environmentIntensity = 0.4;
+    pm.dispose();
+  } catch (e) { console.warn('env', e); }
 
-  const hemi = new THREE.HemisphereLight(0xdfe8f5, 0x5a5a48, 1.4);
+  const hemi = new THREE.HemisphereLight(0xdfe8f5, 0x5a5a48, 0.45);
   scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xfff1dc, 2.6);
+  const dir = new THREE.DirectionalLight(0xfff1dc, 3.1);
   dir.position.copy(sun).multiplyScalar(200);
   if (quality !== 'low') {
     dir.castShadow = true;

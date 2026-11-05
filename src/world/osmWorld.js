@@ -12,31 +12,81 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 const CELL = 16;
 
-function facadeTexture() {
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#d9d4cb'; g.fillRect(0, 0, 128, 128);
-  // sujeira/ruído
-  for (let i = 0; i < 900; i++) {
-    const v = 180 + Math.random() * 60;
-    g.fillStyle = `rgba(${v},${v - 4},${v - 10},0.25)`;
-    g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
-  }
-  // laje
-  g.fillStyle = '#b9b3a8'; g.fillRect(0, 118, 128, 10);
-  // janela
-  g.fillStyle = '#5a5f66'; g.fillRect(30, 28, 68, 62);
-  const grad = g.createLinearGradient(0, 30, 0, 88);
-  grad.addColorStop(0, '#9fb6c9'); grad.addColorStop(1, '#2c3e50');
-  g.fillStyle = grad; g.fillRect(34, 32, 60, 54);
-  g.fillStyle = '#5a5f66'; g.fillRect(62, 32, 4, 54);
-  g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(36, 34, 20, 4);
+// ---------- Fachadas (texturas geradas: tijolo, reboco, vidro espelhado, lojas) ----------
+function canvasTex(c, repeat = true) {
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
   return t;
+}
+function noise(g, w, h, n, a, base = 128, spread = 60) {
+  for (let i = 0; i < n; i++) {
+    const v = base + (Math.random() - 0.5) * spread;
+    g.fillStyle = `rgba(${v},${v},${v},${a})`;
+    g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+}
+function drawWindow(g, x, y, w, h, frame = '#e8e6e0') {
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x - 3, y - 3, w + 6, h + 8); // sombra/recorte
+  g.fillStyle = frame; g.fillRect(x - 2, y - 2, w + 4, h + 4);
+  const gr = g.createLinearGradient(x, y, x + w * 0.6, y + h);
+  gr.addColorStop(0, '#9db4c6'); gr.addColorStop(0.45, '#3d5466'); gr.addColorStop(1, '#1c2733');
+  g.fillStyle = gr; g.fillRect(x, y, w, h);
+  g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x + 2, y + 2, w * 0.35, h * 0.12);
+  g.fillStyle = frame; g.fillRect(x + w / 2 - 1.5, y, 3, h); g.fillRect(x, y + h * 0.38, w, 3);
+  g.fillStyle = '#cfcac0'; g.fillRect(x - 5, y + h + 2, w + 10, 5); // peitoril
+  // cortina em algumas
+  if (Math.random() < 0.35) { g.fillStyle = `rgba(${200 + Math.random() * 55},${180 + Math.random() * 60},${150 + Math.random() * 80},.55)`; g.fillRect(x + 1, y + 1, w * (0.3 + Math.random() * 0.4), h - 2); }
+}
+function facadeSet(brickImg) {
+  const S = 256;
+  // reboco pintado
+  const plaster = document.createElement('canvas'); plaster.width = plaster.height = S;
+  let g = plaster.getContext('2d');
+  g.fillStyle = '#e9e4da'; g.fillRect(0, 0, S, S);
+  noise(g, S, S, 2500, 0.08, 200, 80);
+  g.fillStyle = 'rgba(80,70,60,.10)'; for (let i = 0; i < 6; i++) g.fillRect(Math.random() * S, S * 0.8, 2, S * 0.2); // escorridos
+  g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(0, S - 10, S, 10); // laje
+  drawWindow(g, 70, 60, 116, 120);
+  // tijolo aparente
+  const brick = document.createElement('canvas'); brick.width = brick.height = S;
+  g = brick.getContext('2d');
+  if (brickImg) g.drawImage(brickImg, 0, 0, S, S); else { g.fillStyle = '#8b4a35'; g.fillRect(0, 0, S, S); }
+  g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(0, S - 12, S, 12);
+  drawWindow(g, 74, 62, 108, 118, '#f2efe8');
+  // vidro espelhado (prédios altos)
+  const glass = document.createElement('canvas'); glass.width = glass.height = S;
+  g = glass.getContext('2d');
+  const gg = g.createLinearGradient(0, 0, S, S);
+  gg.addColorStop(0, '#7d95a8'); gg.addColorStop(0.5, '#2e4152'); gg.addColorStop(1, '#4f6678');
+  g.fillStyle = gg; g.fillRect(0, 0, S, S);
+  g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, 0, S * 0.45, S);
+  g.fillStyle = '#8b9196'; g.fillRect(0, 0, 6, S); g.fillRect(S / 2 - 3, 0, 6, S); g.fillRect(0, S - 14, S, 14);
+  for (let i = 0; i < 5; i++) { g.fillStyle = `rgba(255,240,200,${Math.random() * 0.12})`; g.fillRect(10 + Math.random() * 200, 10 + Math.random() * 200, 40, 30); }
+  // térreo com lojas (16 m = 4 lojas)
+  const shop = document.createElement('canvas'); shop.width = 1024; shop.height = 256;
+  g = shop.getContext('2d');
+  g.fillStyle = '#d8d2c6'; g.fillRect(0, 0, 1024, 256); noise(g, 1024, 256, 3000, 0.08, 190, 70);
+  const signs = ['#c0392b', '#1f6fb2', '#e8a317', '#2e8b57', '#6c3483', '#d35400', '#117a65', '#b03a2e'];
+  for (let k = 0; k < 4; k++) {
+    const x = k * 256;
+    const c = signs[Math.floor(Math.random() * signs.length)];
+    g.fillStyle = c; g.fillRect(x + 8, 14, 240, 42); // letreiro
+    g.fillStyle = 'rgba(255,255,255,.9)'; g.font = 'bold 26px sans-serif'; g.textAlign = 'center';
+    g.fillText(['MERCADO', 'FARMÁCIA', 'PADARIA', 'BAR', 'LOJA', 'ÓTICA', 'LANCHES', 'SALÃO', 'AÇOUGUE', 'BAZAR'][Math.floor(Math.random() * 10)], x + 128, 45);
+    // toldo
+    for (let i = 0; i < 12; i++) { g.fillStyle = i % 2 ? c : '#f4f1ea'; g.fillRect(x + 8 + i * 20, 58, 20, 18); }
+    // vitrine e porta
+    g.fillStyle = '#2b2b2b'; g.fillRect(x + 14, 84, 228, 168);
+    const vg = g.createLinearGradient(x, 84, x + 120, 252);
+    vg.addColorStop(0, '#8aa0b0'); vg.addColorStop(1, '#1d262e');
+    g.fillStyle = vg; g.fillRect(x + 20, 90, 140, 160); g.fillRect(x + 168, 90, 68, 160);
+    g.fillStyle = 'rgba(255,230,170,.25)'; for (let i = 0; i < 6; i++) g.fillRect(x + 26 + Math.random() * 120, 150 + Math.random() * 80, 18, 14); // produtos
+    if (Math.random() < 0.4) { g.fillStyle = '#555'; for (let i = 0; i < 228; i += 6) g.fillRect(x + 14 + i, 84, 3, 168); } // porta de enrolar
+  }
+  const T = (c) => canvasTex(c);
+  return { plaster: T(plaster), brick: T(brick), glass: T(glass), shop: T(shop) };
 }
 
 function containerTexture() {
@@ -132,6 +182,87 @@ async function openFreeMapBuildings(lat, lon, R) {
   return { elements: els };
 }
 
+// ---------- árvores: tronco com galhos + copa feita de "cartões" de folhas (técnica usada em jogos) ----------
+let _treeKit = null;
+function treeKit() {
+  if (_treeKit) return _treeKit;
+  const R = seededRandom(1234);
+  // textura de folhas com transparência
+  const n = 256, cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  const g = cv.getContext('2d');
+  for (let i = 0; i < 1100; i++) {
+    const x = n / 2 + (R() - 0.5) * n * 0.95 * Math.sqrt(R()), y = n / 2 + (R() - 0.5) * n * 0.95 * Math.sqrt(R());
+    if (Math.hypot(x - n / 2, y - n / 2) > n * 0.46) continue;
+    const l = 7 + R() * 9, a = R() * 6.28, sh = 0.55 + R() * 0.45;
+    g.fillStyle = `rgb(${Math.floor(60 * sh + 20)},${Math.floor(120 * sh + 25)},${Math.floor(40 * sh + 10)})`;
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.beginPath(); g.ellipse(0, 0, l, l * 0.42, 0, 0, 7); g.fill();
+    g.strokeStyle = 'rgba(30,50,20,0.5)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-l, 0); g.lineTo(l, 0); g.stroke();
+    g.restore();
+  }
+  const leafTex = new THREE.CanvasTexture(cv);
+  leafTex.colorSpace = THREE.SRGBColorSpace;
+  leafTex.anisotropy = 4;
+  // casca
+  const bc = document.createElement('canvas'); bc.width = 64; bc.height = 256;
+  const bg = bc.getContext('2d');
+  bg.fillStyle = '#5a4a3a'; bg.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 160; i++) { const v = 40 + R() * 60; bg.fillStyle = `rgba(${v},${v * 0.85},${v * 0.7},0.6)`; bg.fillRect(R() * 64, R() * 256, 1 + R() * 3, 6 + R() * 30); }
+  const barkTex = new THREE.CanvasTexture(bc);
+  barkTex.colorSpace = THREE.SRGBColorSpace;
+  barkTex.wrapS = barkTex.wrapT = THREE.RepeatWrapping;
+  const leaf = new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, metalness: 0 });
+  const bark = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 1, metalness: 0 });
+
+  const variants = [];
+  for (let v = 0; v < 3; v++) {
+    const parts = [];
+    const H = 2.6 + R() * 1.0;
+    const t = new THREE.CylinderGeometry(0.13, 0.24, H + 0.6, 7, 4); t.translate(0, (H + 0.6) / 2, 0);
+    parts.push(t);
+    const cy = H + 1.8 + R() * 0.6, rx = 2.3 + R() * 0.8, ry = 1.8 + R() * 0.6;
+    const heads = [];
+    for (let b = 0; b < 5; b++) {
+      const a = (b / 5) * 6.28 + R() * 0.8, len = 1.3 + R() * 0.8, el = 0.6 + R() * 0.5;
+      const dir = new THREE.Vector3(Math.cos(a) * Math.cos(el), Math.sin(el), Math.sin(a) * Math.cos(el));
+      const br = new THREE.CylinderGeometry(0.04, 0.09, len, 5); br.translate(0, len / 2, 0);
+      br.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      const y0 = H - 0.4 + R() * 0.6;
+      br.translate(0, y0, 0);
+      parts.push(br);
+      heads.push(new THREE.Vector3(0, y0, 0).addScaledVector(dir, len));
+    }
+    const trunk = mergeGeometries(parts.map((p) => p.toNonIndexed()));
+    // copa
+    const cards = [];
+    const center = new THREE.Vector3(0, cy, 0);
+    for (let i = 0; i < 72; i++) {
+      const sz = 1.6 + R() * 1.1;
+      const pl = new THREE.PlaneGeometry(sz, sz);
+      pl.rotateX(R() * 6.28); pl.rotateY(R() * 6.28); pl.rotateZ(R() * 6.28);
+      let pos;
+      if (i < heads.length * 3) pos = heads[i % heads.length].clone().add(new THREE.Vector3((R() - 0.5) * 1.2, R() * 0.8, (R() - 0.5) * 1.2));
+      else { const u = R() * 6.28, w = Math.acos(2 * R() - 1), rr = Math.cbrt(R()); pos = new THREE.Vector3(Math.sin(w) * Math.cos(u) * rx * rr, Math.cos(w) * ry * rr, Math.sin(w) * Math.sin(u) * rx * rr).add(center); }
+      pl.translate(pos.x, pos.y, pos.z);
+      // normais "esféricas": a copa é iluminada como um volume redondo
+      const P = pl.attributes.position, N = pl.attributes.normal, tmp = new THREE.Vector3();
+      for (let j = 0; j < P.count; j++) {
+        tmp.set(P.getX(j), P.getY(j), P.getZ(j)).sub(center);
+        tmp.x /= rx; tmp.y /= ry; tmp.z /= rx;
+        tmp.normalize();
+        N.setXYZ(j, tmp.x, tmp.y + 0.15, tmp.z);
+      }
+      cards.push(pl);
+    }
+    const leaves = mergeGeometries(cards);
+    leaves.computeBoundingSphere();
+    variants.push({ trunk, leaves });
+  }
+  _treeKit = { variants, leaf, bark };
+  return _treeKit;
+}
+
 export class OsmWorld {
   constructor(scene, renderer, quality) {
     this.scene = scene;
@@ -206,7 +337,14 @@ export class OsmWorld {
     progress(0.75, 'Construindo a cidade...');
 
     const rnd = seededRandom(Math.floor(Math.abs(lat * 1e5 + lon * 1e5)));
-    const wallPos = [], wallUv = [], wallCol = [], roofGeos = [];
+    const roofGeos = [];
+    const walls = { plaster: [], brick: [], glass: [], shop: [] };
+    const quad = (arr, ax, az, bx, bz, y0, y1, u0, u1, v0, v1, c) => {
+      arr.push([[ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y0, az, bx, y1, bz, ax, y1, az], [u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1], c]);
+    };
+    let brickImg = null;
+    try { brickImg = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = import.meta.env.BASE_URL + 'textures/brick.jpg'; }); } catch {}
+    const fac = facadeSet(brickImg);
     const trees = [];
     const col = new THREE.Color();
     const palette = [0xe8e2d6, 0xd9cbb5, 0xcfd4d8, 0xe0c9a6, 0xbfb6a8, 0xf0ece4, 0xc9b8a0, 0xd6d0c4, 0xa9b4bf];
@@ -216,22 +354,33 @@ export class OsmWorld {
       const pts = ring.map((g) => { const p = proj.toLocal(g.lat, g.lon); return [p.x, p.z]; });
       if (pts.length > 1 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]) pts.pop();
       if (pts.length < 3) return;
+      // garante o sentido do contorno para as placas das lojas não ficarem espelhadas
+      let area = 0;
+      for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; area += a[0] * b[1] - b[0] * a[1]; }
+      if (area > 0) pts.reverse();
       const h = parseHeight(tags, rnd);
       const minH = Math.max(0, parseFloat(tags.min_height) || 0);
       if (minH > 0) return; // partes suspensas: ignoradas no protótipo
       this.addPoly(pts, h, 'building');
       col.setHex(palette[Math.floor(rnd() * palette.length)]);
       if (tags.colour && /^#[0-9a-f]{6}$/i.test(tags.colour)) col.lerp(new THREE.Color(tags.colour), 0.5);
-      // paredes
+      // paredes: térreo (lojas em parte dos prédios) + andares
+      const tall = h > 24;
+      const style = tall ? 'glass' : rnd() < 0.42 ? 'brick' : 'plaster';
+      const commercial = /commercial|retail|shop|mixed/.test(tags.building || '') || (h > 5 && h < 40 && rnd() < 0.35);
+      const gf = commercial && h > 4.5 ? 3.8 : 0;
+      const wc = style === 'brick' ? new THREE.Color(1, 1, 1).multiplyScalar(0.85 + rnd() * 0.2) : style === 'glass' ? new THREE.Color(0.9 + rnd() * 0.1, 0.95, 1) : col;
       let u = 0;
       for (let i = 0; i < pts.length; i++) {
         const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length];
         const len = Math.hypot(bx - ax, bz - az);
-        const u0 = u / 4, u1 = (u + len) / 4, v1 = h / 3.1;
+        if (gf) {
+          const su0 = u / 16, su1 = (u + len) / 16;
+          quad(walls.shop, ax, az, bx, bz, 0, gf, su0, su1, 0, 1, [1, 1, 1]);
+        }
+        const bw = style === 'glass' ? 3 : 4, bh = style === 'glass' ? 3.6 : 3.1;
+        quad(walls[style], ax, az, bx, bz, gf, h, u / bw, (u + len) / bw, gf / bh, h / bh, [wc.r, wc.g, wc.b]);
         u += len;
-        wallPos.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, 0, az, bx, h, bz, ax, h, az);
-        wallUv.push(u0, 0, u1, 0, u1, v1, u0, 0, u1, v1, u0, v1);
-        for (let k = 0; k < 6; k++) wallCol.push(col.r, col.g, col.b);
       }
       // telhado
       try {
@@ -261,14 +410,24 @@ export class OsmWorld {
     }
     this.buildingCount = this.polys.length;
 
-    if (wallPos.length) {
+    const matProps = {
+      plaster: { roughness: 0.9, metalness: 0 },
+      brick: { roughness: 0.95, metalness: 0 },
+      glass: { roughness: 0.12, metalness: 0.75, envMapIntensity: 1.4 },
+      shop: { roughness: 0.6, metalness: 0.1 },
+    };
+    for (const k of Object.keys(walls)) {
+      const list = walls[k];
+      if (!list.length) continue;
+      const pos = [], uv = [], cl = [];
+      for (const [p6, u6, c] of list) { pos.push(...p6); uv.push(...u6); for (let i = 0; i < 6; i++) cl.push(c[0], c[1], c[2]); }
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
-      g.setAttribute('uv', new THREE.Float32BufferAttribute(wallUv, 2));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(wallCol, 3));
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(cl, 3));
       g.computeVertexNormals();
       g.computeBoundsTree();
-      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: facadeTexture(), vertexColors: true, roughness: 0.85, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: fac[k], vertexColors: true, side: THREE.DoubleSide, ...matProps[k] }));
       m.castShadow = m.receiveShadow = true;
       this.group.add(m); this.solid.push(m);
     }
@@ -300,22 +459,28 @@ export class OsmWorld {
   buildTrees(trees, rnd) {
     const list = trees.filter((t) => Math.abs(t.x) < this.bounds && Math.abs(t.z) < this.bounds).slice(0, 1500);
     if (!list.length) return;
-    const trunkG = new THREE.CylinderGeometry(0.15, 0.25, 3, 6); trunkG.translate(0, 1.5, 0);
-    const crownG = new THREE.IcosahedronGeometry(2.2, 1); crownG.translate(0, 4.4, 0);
-    const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x5b4632, roughness: 1 }), list.length);
-    const crown = new THREE.InstancedMesh(crownG, new THREE.MeshStandardMaterial({ color: 0x4f7a3a, roughness: 0.95, flatShading: true }), list.length);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
-    list.forEach((t, i) => {
-      const k = 0.8 + rnd() * 0.6;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6.28);
-      m.compose(p.set(t.x, 0, t.z), q, s.set(k, k, k));
-      trunk.setMatrixAt(i, m); crown.setMatrixAt(i, m);
-      crown.setColorAt(i, c.setHSL(0.25 + rnd() * 0.08, 0.4, 0.25 + rnd() * 0.12));
-      const r = 0.35;
-      this.addPoly([[t.x - r, t.z - r], [t.x + r, t.z - r], [t.x + r, t.z + r], [t.x - r, t.z + r]], 8, 'tree');
+    const kit = treeKit();
+    const per = kit.variants.map(() => []);
+    list.forEach((t, i) => per[i % per.length].push(t));
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+    kit.variants.forEach((v, vi) => {
+      const pts = per[vi];
+      if (!pts.length) return;
+      const trunk = new THREE.InstancedMesh(v.trunk, kit.bark, pts.length);
+      const crown = new THREE.InstancedMesh(v.leaves, kit.leaf, pts.length);
+      pts.forEach((t, i) => {
+        const k = 0.75 + rnd() * 0.6;
+        q.setFromAxisAngle(up, rnd() * 6.28);
+        m.compose(p.set(t.x, 0, t.z), q, sc.set(k, k * (0.9 + rnd() * 0.25), k));
+        trunk.setMatrixAt(i, m); crown.setMatrixAt(i, m);
+        crown.setColorAt(i, c.setHSL(0.2 + rnd() * 0.1, 0.3 + rnd() * 0.25, 0.5 + rnd() * 0.2));
+        const r = 0.35;
+        this.addPoly([[t.x - r, t.z - r], [t.x + r, t.z - r], [t.x + r, t.z + r], [t.x - r, t.z + r]], 8, 'tree');
+      });
+      trunk.castShadow = crown.castShadow = true;
+      crown.receiveShadow = true;
+      this.group.add(trunk, crown);
     });
-    trunk.castShadow = crown.castShadow = true;
-    this.group.add(trunk, crown);
   }
 
   buildCover(rnd) {

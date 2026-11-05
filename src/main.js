@@ -144,6 +144,8 @@ function createRenderer() {
   throw new Error(`${why}\n\nComo resolver:\n1) Reinicie o notebook (o Edge fica aberto em segundo plano e só reativa o 3D depois de reiniciar).\n2) Se continuar, teste no Google Chrome.\n\nDetalhes: WebGL2=${i.webgl2 ? 'sim' : 'não'} · WebGL1=${i.webgl1 ? 'sim' : 'não'} · GPU=${i.gpu} · ${lastErr && lastErr.message}`);
 }
 
+$('btn-rotate-skip').onclick = () => document.body.classList.add('rot-skip');
+
 let loadToken = 0;
 $('btn-deploy').onclick = async () => {
   if (!chosen) return;
@@ -155,6 +157,14 @@ $('btn-deploy').onclick = async () => {
     mode = 'osm';
   }
   profile.data.spawn = chosen; profile.save();
+  // celular: tela cheia e deitado (paisagem), quando o navegador permitir
+  if (document.body.classList.contains('touch')) {
+    try {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(() => {});
+    } catch {}
+  }
   show('screen-loading');
   const token = ++loadToken;
   let lastChange = performance.now();
